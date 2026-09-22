@@ -1,4 +1,4 @@
-原项目地址：[https://github.com/xxhfln/Skill_Mahjong](https://github.com/xxhfln/Skill_Mahjong)
+原项目地址：[https://github.com/LaurenceTse/skill-mahjong](https://github.com/LaurenceTse/skill-mahjong)
 说明：本项目复刻/修改自上述开源项目，并在此基础上进行二次开发。
 
 
