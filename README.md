@@ -1,3 +1,8 @@
+原项目地址：[https://github.com/xxhfln/Skill_Mahjong](https://github.com/xxhfln/Skill_Mahjong)
+说明：本项目复刻/修改自上述开源项目，并在此基础上进行二次开发。
+
+
+
 # 技能麻将
 
 移动端优先的麻将技能抽选网页，已针对微信内置浏览器做适配。
