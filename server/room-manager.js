@@ -1,0 +1,212 @@
+const { randomBytes, randomUUID } = require("node:crypto");
+
+const MIN_PLAYERS = 2;
+const MAX_PLAYERS = 4;
+const MAX_DRAW_COUNT = 6;
+
+class RoomError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "RoomError";
+    this.code = code;
+  }
+}
+
+class RoomManager {
+  constructor({ skills, random = Math.random } = {}) {
+    if (!Array.isArray(skills) || skills.length === 0) {
+      throw new TypeError("A non-empty skill catalog is required");
+    }
+
+    this.skillsById = new Map(skills.map((skill) => [skill.id, skill]));
+    this.random = random;
+    this.rooms = new Map();
+    this.sessions = new Map();
+  }
+
+  createRoom({ name, skillIds, drawCount }) {
+    const playerName = normalizeName(name);
+    if (!playerName) throw new RoomError("INVALID_NAME", "请输入有效昵称");
+    if (!Array.isArray(skillIds) || skillIds.length === 0) {
+      throw new RoomError("INVALID_POOL", "技能池不能为空");
+    }
+
+    const uniqueIds = new Set(skillIds);
+    if (uniqueIds.size !== skillIds.length || [...uniqueIds].some((id) => !this.skillsById.has(id))) {
+      throw new RoomError("INVALID_POOL", "技能池包含无效或重复的技能");
+    }
+    if (!Number.isInteger(drawCount) || drawCount < 1 || drawCount > MAX_DRAW_COUNT || drawCount > skillIds.length) {
+      throw new RoomError("INVALID_DRAW_COUNT", "每人抽牌数量必须为 1–6 且不超过技能池数量");
+    }
+
+    const roomCode = this.createRoomCode();
+    const room = {
+      roomCode,
+      hostPlayerId: null,
+      skillIds: [...skillIds],
+      drawCount,
+      round: 1,
+      players: new Map(),
+      publicCards: [],
+    };
+    const player = this.createPlayer(room, playerName, true);
+    room.hostPlayerId = player.id;
+    room.players.set(player.id, player);
+    this.rooms.set(roomCode, room);
+
+    return this.resultFor(room, player);
+  }
+
+  joinRoom({ roomCode, name }) {
+    const room = this.findRoom(roomCode);
+    const playerName = normalizeName(name);
+    if (!playerName) throw new RoomError("INVALID_NAME", "请输入有效昵称");
+    if ([...room.players.values()].some((player) => player.name.toLocaleLowerCase() === playerName.toLocaleLowerCase())) {
+      throw new RoomError("DUPLICATE_NAME", "房间内已有相同昵称的玩家");
+    }
+    if (room.players.size >= MAX_PLAYERS) throw new RoomError("ROOM_FULL", "房间人数已满");
+
+    const player = this.createPlayer(room, playerName, false);
+    room.players.set(player.id, player);
+    return this.resultFor(room, player);
+  }
+
+  resume(sessionToken) {
+    const { room, player } = this.resolveSession(sessionToken);
+    player.online = true;
+    return this.snapshotForPlayer(room, player);
+  }
+
+  disconnect(sessionToken) {
+    const { room, player } = this.resolveSession(sessionToken);
+    player.online = false;
+    return this.snapshotForPlayer(room, player);
+  }
+
+  drawCard(sessionToken) {
+    const { room, player } = this.resolveSession(sessionToken);
+    const available = room.skillIds.filter((id) => !player.cards.has(id));
+    if (player.cards.size >= room.drawCount || available.length === 0) {
+      throw new RoomError("DRAW_LIMIT_REACHED", "本局可抽卡数量已用完");
+    }
+
+    const cardId = available[this.randomIndex(available.length)];
+    player.cards.set(cardId, false);
+    return this.snapshotForPlayer(room, player);
+  }
+
+  useCard(sessionToken, cardId) {
+    const { room, player } = this.resolveSession(sessionToken);
+    if (!player.cards.has(cardId)) throw new RoomError("CARD_NOT_OWNED", "这张卡不属于你");
+    if (player.cards.get(cardId)) throw new RoomError("CARD_ALREADY_USED", "这张卡已经使用过");
+
+    player.cards.set(cardId, true);
+    room.publicCards.push({
+      id: cardId,
+      ownerId: player.id,
+      ownerName: player.name,
+      usedAt: Date.now(),
+    });
+    return this.snapshotForPlayer(room, player);
+  }
+
+  resetRoom(sessionToken) {
+    const { room, player } = this.resolveSession(sessionToken);
+    if (player.id !== room.hostPlayerId) throw new RoomError("FORBIDDEN", "只有房主可以重置本局");
+
+    for (const member of room.players.values()) member.cards.clear();
+    room.publicCards = [];
+    room.round += 1;
+    return this.snapshotForPlayer(room, player);
+  }
+
+  snapshotFor(sessionToken) {
+    const { room, player } = this.resolveSession(sessionToken);
+    return this.snapshotForPlayer(room, player);
+  }
+
+  createRoomCode() {
+    let candidate = this.randomIndex(1_000_000);
+    for (let attempts = 0; attempts < 1_000_000; attempts += 1) {
+      const code = String(candidate).padStart(6, "0");
+      if (!this.rooms.has(code)) return code;
+      candidate = (candidate + 1) % 1_000_000;
+    }
+    throw new RoomError("SERVER_BUSY", "暂时无法创建新房间");
+  }
+
+  createPlayer(room, name, isHost) {
+    const player = {
+      id: randomUUID(),
+      name,
+      isHost,
+      online: true,
+      cards: new Map(),
+      sessionToken: randomBytes(32).toString("base64url"),
+    };
+    this.sessions.set(player.sessionToken, { room, player });
+    return player;
+  }
+
+  resultFor(room, player) {
+    return {
+      roomCode: room.roomCode,
+      sessionToken: player.sessionToken,
+      snapshot: this.snapshotForPlayer(room, player),
+    };
+  }
+
+  findRoom(roomCode) {
+    if (typeof roomCode !== "string" || !/^\d{6}$/.test(roomCode)) {
+      throw new RoomError("ROOM_NOT_FOUND", "房间码无效或房间不存在");
+    }
+    const room = this.rooms.get(roomCode);
+    if (!room) throw new RoomError("ROOM_NOT_FOUND", "房间码无效或房间不存在");
+    return room;
+  }
+
+  resolveSession(sessionToken) {
+    if (typeof sessionToken !== "string" || sessionToken.length < 32) {
+      throw new RoomError("INVALID_SESSION", "玩家会话无效");
+    }
+    const session = this.sessions.get(sessionToken);
+    if (!session) throw new RoomError("INVALID_SESSION", "玩家会话无效或已失效");
+    return session;
+  }
+
+  snapshotForPlayer(room, player) {
+    return {
+      roomCode: room.roomCode,
+      round: room.round,
+      drawCount: room.drawCount,
+      skillCount: room.skillIds.length,
+      poolSkillIds: [...room.skillIds],
+      me: { id: player.id, name: player.name, isHost: player.isHost },
+      players: [...room.players.values()].map((member) => ({
+        id: member.id,
+        name: member.name,
+        isHost: member.isHost,
+        online: member.online,
+        drawnCount: member.cards.size,
+      })),
+      privateCards: [...player.cards.entries()].map(([id, used]) => ({ ...this.skillsById.get(id), used })),
+      publicCards: room.publicCards.map((usedCard) => ({
+        ...this.skillsById.get(usedCard.id),
+        ownerId: usedCard.ownerId,
+        ownerName: usedCard.ownerName,
+        usedAt: usedCard.usedAt,
+      })),
+    };
+  }
+
+  randomIndex(limit) {
+    return Math.min(limit - 1, Math.floor(this.random() * limit));
+  }
+}
+
+function normalizeName(name) {
+  if (typeof name !== "string") return "";
+  return name.trim().slice(0, 20);
+}
+
+module.exports = { RoomManager, RoomError, MIN_PLAYERS, MAX_PLAYERS, MAX_DRAW_COUNT };

@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="description" content="技能麻将 — 好好玩 要爆了。随机抽取本局麻将技能规则。" />
+    <meta name="description" content="技能麻将 — 好好玩 要爆了。随机抽取本局 N 张麻将技能规则，可逐张打出查看效果。" />
     <meta property="og:title" content="技能麻将" />
     <meta property="og:description" content="好好玩 要爆了" />
     <meta property="og:type" content="website" />
@@ -21,7 +21,7 @@
     <meta http-equiv="Expires" content="0" />
     <title>技能麻将</title>
     <!-- 微信内置浏览器常无法稳定加载 Google Fonts，优先系统中文字体 -->
-    <link rel="stylesheet" href="css/style.css?v=20260725a" />
+    <link rel="stylesheet" href="css/style.css?v=20260923b" />
   </head>
   <body>
     <div class="bg-layer" aria-hidden="true"></div>
@@ -35,31 +35,45 @@
       </header>
 
       <section class="stage" aria-label="技能抽选">
-        <div class="tile-frame" id="tileFrame">
-          <div class="tile-glow"></div>
-          <div class="reel-window">
-            <div class="reel" id="reel">
-              <div class="skill-card" id="displayCard">
-                <span class="skill-card__hint">等待开局</span>
-                <h2 class="skill-card__name" id="displayName">？？？</h2>
-                <p class="skill-card__rule" id="displayRule">
-                  点击下方「开始」抽取本局技能
-                </p>
-              </div>
-            </div>
+        <!-- 牌堆 / 抽取状态 -->
+        <div class="deck" id="deck">
+          <div class="deck__glow"></div>
+          <div class="deck__inner">
+            <span class="deck__hint" id="deckHint">牌堆就绪</span>
+            <p class="deck__text" id="deckText">点击下方「抽牌」发牌</p>
           </div>
-          <div class="scanline" aria-hidden="true"></div>
+        </div>
+
+        <!-- 抽取数量步进器 -->
+        <div class="stepper">
+          <span class="stepper__label">每局抽取</span>
+          <div class="stepper__ctrl">
+            <button type="button" class="stepper__btn" id="nMinus" aria-label="减少数量">
+              −
+            </button>
+            <span class="stepper__value" id="nValue">3</span>
+            <button type="button" class="stepper__btn" id="nPlus" aria-label="增加数量">
+              ＋
+            </button>
+            <span class="stepper__unit">张</span>
+          </div>
         </div>
 
         <p class="pool-meta" id="poolMeta">候选池 · 40 / 40</p>
 
+        <!-- 手牌区 -->
+        <div class="hand" id="hand" aria-label="你的手牌"></div>
+
+        <!-- 已发动技能效果区 -->
+        <div class="played" id="played" hidden aria-label="已发动技能">
+          <h3 class="played__title">已发动技能</h3>
+          <div class="played__list" id="playedList"></div>
+        </div>
+
         <div class="controls">
-          <button type="button" class="btn btn-primary" id="mainBtn">
-            开始
-          </button>
-          <button type="button" class="btn btn-ghost" id="poolBtn">
-            技能池
-          </button>
+          <button type="button" class="btn btn-primary" id="drawBtn">抽牌</button>
+          <button type="button" class="btn btn-ghost" id="resetBtn">重置</button>
+          <button type="button" class="btn btn-ghost" id="poolBtn">技能池</button>
         </div>
       </section>
     </main>
@@ -102,7 +116,7 @@
       </div>
     </div>
 
-    <script src="js/skills.js?v=20260725a"></script>
-    <script src="js/app.js?v=20260725a"></script>
+    <script src="js/skills.js?v=20260923b"></script>
+    <script src="js/app.js?v=20260923b"></script>
   </body>
 </html>

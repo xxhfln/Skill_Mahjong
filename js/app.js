@@ -1,5 +1,6 @@
 (() => {
   const STORAGE_KEY = "skill-mahjong-pool";
+  const N_KEY = "skill-mahjong-n";
   const skills = window.MAHJONG_SKILLS;
 
   // 微信内置浏览器 100vh 常含地址栏高度，用可视高度修正
@@ -14,13 +15,20 @@
   });
 
   const els = {
-    mainBtn: document.getElementById("mainBtn"),
+    drawBtn: document.getElementById("drawBtn"),
+    resetBtn: document.getElementById("resetBtn"),
     poolBtn: document.getElementById("poolBtn"),
     poolMeta: document.getElementById("poolMeta"),
-    displayCard: document.getElementById("displayCard"),
-    displayName: document.getElementById("displayName"),
-    displayRule: document.getElementById("displayRule"),
-    tileFrame: document.getElementById("tileFrame"),
+    deck: document.getElementById("deck"),
+    deckHint: document.getElementById("deckHint"),
+    deckText: document.getElementById("deckText"),
+    nMinus: document.getElementById("nMinus"),
+    nPlus: document.getElementById("nPlus"),
+    nValue: document.getElementById("nValue"),
+    hand: document.getElementById("hand"),
+    played: document.getElementById("played"),
+    playedList: document.getElementById("playedList"),
+    // 技能池弹窗
     poolSheet: document.getElementById("poolSheet"),
     skillList: document.getElementById("skillList"),
     selectAllBtn: document.getElementById("selectAllBtn"),
@@ -34,10 +42,13 @@
 
   let selectedIds = loadSelectedIds();
   let draftIds = new Set(selectedIds);
-  let spinning = false;
+  let drawing = false;
   let spinTimer = null;
-  let lastIndex = -1;
-  let resultSkill = null;
+  let hand = []; // 当前手牌（未打出的技能对象）
+  let played = []; // 已打出的技能对象
+  let nValue = loadN();
+
+  /* ---------------- 技能池（保留原逻辑） ---------------- */
 
   function loadSelectedIds() {
     try {
@@ -75,105 +86,6 @@
     return String(rule || "")
       .replace(/([。；])/g, "$1\n")
       .replace(/\n+$/g, "");
-  }
-
-  function renderSkill(skill, hint) {
-    const hintEl = els.displayCard.querySelector(".skill-card__hint");
-    hintEl.textContent = hint;
-    els.displayName.textContent = skill.name;
-    els.displayRule.textContent = formatRuleText(skill.rule);
-  }
-
-  function pickNextSkill(pool) {
-    if (pool.length === 1) return pool[0];
-    let next = Math.floor(Math.random() * pool.length);
-    if (next === lastIndex) {
-      next = (next + 1 + Math.floor(Math.random() * (pool.length - 1))) % pool.length;
-    }
-    lastIndex = next;
-    return pool[next];
-  }
-
-  function burstSparks() {
-    const rect = els.tileFrame.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-
-    for (let i = 0; i < 14; i++) {
-      const spark = document.createElement("span");
-      spark.className = "spark";
-      const angle = (Math.PI * 2 * i) / 14 + Math.random() * 0.4;
-      const dist = 60 + Math.random() * 90;
-      spark.style.left = `${cx}px`;
-      spark.style.top = `${cy}px`;
-      spark.style.setProperty("--dx", `${Math.cos(angle) * dist}px`);
-      spark.style.setProperty("--dy", `${Math.sin(angle) * dist}px`);
-      els.sparkLayer.appendChild(spark);
-      const remove = () => {
-        if (spark.parentNode) spark.parentNode.removeChild(spark);
-      };
-      spark.addEventListener("animationend", remove);
-      spark.addEventListener("webkitAnimationEnd", remove);
-      setTimeout(remove, 1000);
-    }
-  }
-
-  function startSpin() {
-    const pool = poolSkills();
-    if (pool.length === 0) {
-      alert("请先在技能池中至少勾选一条技能");
-      openPool();
-      return;
-    }
-
-    spinning = true;
-    resultSkill = null;
-    els.mainBtn.textContent = "停止";
-    els.mainBtn.classList.add("is-stop");
-    els.poolBtn.disabled = true;
-    els.tileFrame.classList.add("is-spinning");
-    els.tileFrame.classList.remove("is-locked");
-    els.displayCard.classList.add("is-racing");
-    els.displayCard.classList.remove("is-reveal");
-
-    const tick = () => {
-      const skill = pickNextSkill(pool);
-      renderSkill(skill, "急速运转中");
-    };
-
-    tick();
-    spinTimer = setInterval(tick, 55);
-  }
-
-  function stopSpin() {
-    if (!spinning) return;
-    spinning = false;
-    clearInterval(spinTimer);
-    spinTimer = null;
-
-    const pool = poolSkills();
-    const finalSkill = pickNextSkill(pool);
-    resultSkill = finalSkill;
-
-    els.tileFrame.classList.remove("is-spinning");
-    els.tileFrame.classList.add("is-locked");
-    els.displayCard.classList.remove("is-racing");
-    els.displayCard.classList.add("is-reveal");
-    renderSkill(finalSkill, "本局技能");
-
-    els.mainBtn.textContent = "再抽一次";
-    els.mainBtn.classList.remove("is-stop");
-    els.poolBtn.disabled = false;
-
-    burstSparks();
-  }
-
-  function onMainClick() {
-    if (spinning) {
-      stopSpin();
-    } else {
-      startSpin();
-    }
   }
 
   function updateSheetCount() {
@@ -229,7 +141,7 @@
   }
 
   function openPool() {
-    if (spinning) return;
+    if (drawing) return;
     draftIds = new Set(selectedIds);
     renderPoolList();
     els.poolSheet.hidden = false;
@@ -249,18 +161,244 @@
     selectedIds = new Set(draftIds);
     saveSelectedIds();
     updatePoolMeta();
+    // 候选数变化后，重新约束 N
+    setN(nValue);
     closePool();
+  }
 
-    if (!resultSkill || !selectedIds.has(resultSkill.id)) {
-      els.displayCard.classList.remove("is-reveal");
-      els.displayName.textContent = "？？？";
-      els.displayRule.textContent = "点击下方「开始」抽取本局技能";
-      els.displayCard.querySelector(".skill-card__hint").textContent = "等待开局";
-      els.mainBtn.textContent = "开始";
+  /* ---------------- 数量步进器 ---------------- */
+
+  function clampN(v) {
+    const max = Math.max(1, selectedIds.size);
+    if (v < 1) v = 1;
+    if (v > max) v = max;
+    return v;
+  }
+
+  function setN(v) {
+    nValue = clampN(v);
+    els.nValue.textContent = nValue;
+    els.nMinus.disabled = nValue <= 1;
+    els.nPlus.disabled = nValue >= selectedIds.size;
+    try {
+      localStorage.setItem(N_KEY, String(nValue));
+    } catch (e) {
+      // 忽略隐私模式写入失败
     }
   }
 
-  els.mainBtn.addEventListener("click", onMainClick);
+  function loadN() {
+    try {
+      const raw = localStorage.getItem(N_KEY);
+      if (raw) return clampN(parseInt(raw, 10) || 3);
+    } catch (e) {
+      // 忽略
+    }
+    return clampN(3);
+  }
+
+  /* ---------------- 抽牌 / 打出 / 重置 ---------------- */
+
+  function pickDistinct(pool, n) {
+    const arr = pool.slice();
+    // Fisher–Yates 洗牌
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = arr[i];
+      arr[i] = arr[j];
+      arr[j] = t;
+    }
+    return arr.slice(0, Math.min(n, arr.length));
+  }
+
+  function drawCards() {
+    if (drawing) return;
+    const pool = poolSkills();
+    if (pool.length === 0) {
+      alert("请先在技能池中至少勾选一条技能");
+      openPool();
+      return;
+    }
+
+    const n = clampN(nValue);
+    drawing = true;
+    setControlsDisabled(true);
+    els.deck.classList.add("is-spinning");
+    els.deckHint.textContent = "发牌中";
+    els.deckText.textContent = "牌堆翻腾…";
+
+    // 牌堆文字高速滚动
+    spinTimer = setInterval(() => {
+      const s = pool[Math.floor(Math.random() * pool.length)];
+      els.deckText.textContent = s.name;
+    }, 60);
+
+    setTimeout(() => {
+      clearInterval(spinTimer);
+      spinTimer = null;
+      drawing = false;
+      setControlsDisabled(false);
+      els.deck.classList.remove("is-spinning");
+
+      hand = pickDistinct(pool, n);
+      played = [];
+      els.deckHint.textContent = "本局手牌";
+      els.deckText.textContent = `已发 ${hand.length} 张`;
+      renderHand();
+      renderPlayed();
+      burstSparks();
+    }, 850);
+  }
+
+  function playCard(id) {
+    const idx = hand.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    const [skill] = hand.splice(idx, 1);
+    played.unshift(skill);
+    renderHand();
+    renderPlayed();
+    els.deckText.textContent = `手牌剩 ${hand.length} 张`;
+  }
+
+  function resetAll() {
+    if (spinTimer) {
+      clearInterval(spinTimer);
+      spinTimer = null;
+    }
+    drawing = false;
+    hand = [];
+    played = [];
+    els.deck.classList.remove("is-spinning");
+    els.deckHint.textContent = "牌堆就绪";
+    els.deckText.textContent = "点击下方「抽牌」发牌";
+    setControlsDisabled(false);
+    renderHand();
+    renderPlayed();
+  }
+
+  function setControlsDisabled(disabled) {
+    els.drawBtn.disabled = disabled;
+    els.resetBtn.disabled = disabled;
+    els.nMinus.disabled = disabled || nValue <= 1;
+    els.nPlus.disabled = disabled || nValue >= selectedIds.size;
+  }
+
+  function renderHand() {
+    els.hand.innerHTML = "";
+    if (hand.length === 0) {
+      els.hand.innerHTML = '<p class="empty">尚未抽牌</p>';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    hand.forEach((skill, i) => {
+      const card = document.createElement("article");
+      card.className = "mcard";
+      card.style.animationDelay = `${i * 70}ms`;
+
+      const top = document.createElement("div");
+      top.className = "mcard__top";
+      const code = document.createElement("span");
+      code.className = "mcard__code";
+      code.textContent = skill.code;
+      const group = document.createElement("span");
+      group.className = "mcard__group";
+      group.textContent = skill.group;
+      top.appendChild(code);
+      top.appendChild(group);
+
+      const name = document.createElement("h3");
+      name.className = "mcard__name";
+      name.textContent = skill.name;
+
+      const rule = document.createElement("p");
+      rule.className = "mcard__rule";
+      rule.textContent = formatRuleText(skill.rule);
+
+      const play = document.createElement("button");
+      play.type = "button";
+      play.className = "mcard__play";
+      play.textContent = "打出";
+      play.dataset.id = skill.id;
+      play.addEventListener("click", () => playCard(skill.id));
+
+      card.appendChild(top);
+      card.appendChild(name);
+      card.appendChild(rule);
+      card.appendChild(play);
+      frag.appendChild(card);
+    });
+    els.hand.appendChild(frag);
+  }
+
+  function renderPlayed() {
+    els.playedList.innerHTML = "";
+    if (played.length === 0) {
+      els.played.hidden = true;
+      return;
+    }
+    els.played.hidden = false;
+    const frag = document.createDocumentFragment();
+    played.forEach((skill) => {
+      const el = document.createElement("div");
+      el.className = "effect";
+
+      const head = document.createElement("div");
+      head.className = "effect__head";
+      const tag = document.createElement("span");
+      tag.className = "effect__tag";
+      tag.textContent = "已发动";
+      const name = document.createElement("span");
+      name.className = "effect__name";
+      name.textContent = skill.name;
+      const code = document.createElement("span");
+      code.className = "effect__code";
+      code.textContent = `${skill.code} · ${skill.group}`;
+      head.appendChild(tag);
+      head.appendChild(name);
+      head.appendChild(code);
+
+      const rule = document.createElement("p");
+      rule.className = "effect__rule";
+      rule.textContent = formatRuleText(skill.rule);
+
+      el.appendChild(head);
+      el.appendChild(rule);
+      frag.appendChild(el);
+    });
+    els.playedList.appendChild(frag);
+  }
+
+  function burstSparks() {
+    const rect = els.deck.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    for (let i = 0; i < 14; i++) {
+      const spark = document.createElement("span");
+      spark.className = "spark";
+      const angle = (Math.PI * 2 * i) / 14 + Math.random() * 0.4;
+      const dist = 60 + Math.random() * 90;
+      spark.style.left = `${cx}px`;
+      spark.style.top = `${cy}px`;
+      spark.style.setProperty("--dx", `${Math.cos(angle) * dist}px`);
+      spark.style.setProperty("--dy", `${Math.sin(angle) * dist}px`);
+      els.sparkLayer.appendChild(spark);
+      const remove = () => {
+        if (spark.parentNode) spark.parentNode.removeChild(spark);
+      };
+      spark.addEventListener("animationend", remove);
+      spark.addEventListener("webkitAnimationEnd", remove);
+      setTimeout(remove, 1000);
+    }
+  }
+
+  /* ---------------- 事件绑定 ---------------- */
+
+  els.drawBtn.addEventListener("click", drawCards);
+  els.resetBtn.addEventListener("click", resetAll);
+  els.nMinus.addEventListener("click", () => setN(nValue - 1));
+  els.nPlus.addEventListener("click", () => setN(nValue + 1));
+
   els.poolBtn.addEventListener("click", openPool);
   els.closePool.addEventListener("click", closePool);
   els.sheetBackdrop.addEventListener("click", closePool);
@@ -276,5 +414,10 @@
     renderPoolList();
   });
 
+  /* ---------------- 初始化 ---------------- */
+
+  setN(nValue);
   updatePoolMeta();
+  renderHand();
+  renderPlayed();
 })();
