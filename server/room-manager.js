@@ -95,6 +95,18 @@ class RoomManager {
     return this.snapshotForPlayer(room, player);
   }
 
+  // 一次性抽取至本局上限（最多 drawCount 张，且互不重复）
+  drawCards(sessionToken) {
+    const { room, player } = this.resolveSession(sessionToken);
+    const need = room.drawCount - player.cards.size;
+    if (need <= 0) throw new RoomError("DRAW_LIMIT_REACHED", "本局可抽卡数量已用完");
+    const available = room.skillIds.filter((id) => !player.cards.has(id));
+    if (available.length === 0) throw new RoomError("NO_CARDS", "技能池已无可抽卡牌");
+    const picked = this.shuffle(available).slice(0, Math.min(need, available.length));
+    picked.forEach((id) => player.cards.set(id, false));
+    return this.snapshotForPlayer(room, player);
+  }
+
   useCard(sessionToken, cardId) {
     const { room, player } = this.resolveSession(sessionToken);
     if (!player.cards.has(cardId)) throw new RoomError("CARD_NOT_OWNED", "这张卡不属于你");
@@ -123,6 +135,29 @@ class RoomManager {
   snapshotFor(sessionToken) {
     const { room, player } = this.resolveSession(sessionToken);
     return this.snapshotForPlayer(room, player);
+  }
+
+  // 返回房间内每位玩家各自专属（含私牌）的快照，用于按 token 定向广播
+  snapshotsForRoom(roomCode) {
+    const room = this.findRoom(roomCode);
+    return [...room.players.values()].map((player) => ({
+      token: player.sessionToken,
+      snapshot: this.snapshotForPlayer(room, player),
+    }));
+  }
+
+  // 列出本服务上的房间（仅公开信息，绝不含有任何卡牌内容）
+  listRooms() {
+    return [...this.rooms.values()].map((room) => {
+      const host = [...room.players.values()].find((player) => player.isHost);
+      return {
+        roomCode: room.roomCode,
+        hostName: host ? host.name : "",
+        playerCount: room.players.size,
+        drawCount: room.drawCount,
+        maxPlayers: MAX_PLAYERS,
+      };
+    });
   }
 
   createRoomCode() {
@@ -197,6 +232,17 @@ class RoomManager {
         usedAt: usedCard.usedAt,
       })),
     };
+  }
+
+  shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i -= 1) {
+      const j = Math.min(i, Math.floor(this.random() * (i + 1)));
+      const t = a[i];
+      a[i] = a[j];
+      a[j] = t;
+    }
+    return a;
   }
 
   randomIndex(limit) {

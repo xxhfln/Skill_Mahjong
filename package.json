@@ -4,7 +4,11 @@
   "private": true,
   "scripts": {
     "start": "node server/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "smoke": "node scripts/smoke-room.cjs"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "ws": "^8.18.3"

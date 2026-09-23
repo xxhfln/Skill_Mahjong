@@ -1,0 +1,13 @@
+services:
+  # Render Blueprint：把本文件提交到仓库后，在 Render 面板新建 Blueprint 即可一键部署
+  - type: web
+    name: skill-mahjong
+    runtime: node
+    plan: free
+    region: singapore # 离国内部署较近；也可改 frankfurt / oregon
+    branch: main
+    healthCheckPath: /health
+    # package.json 里的 start 脚本即启动命令，Render 会自动识别
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

@@ -1,0 +1,10 @@
+node_modules
+.git
+.github
+.workbuddy
+.vscode
+npm-debug.log*
+*.zip
+skill-mahjong-netlify.zip
+wscheck.cjs
+e2e.cjs
