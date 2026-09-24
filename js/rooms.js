@@ -6,6 +6,7 @@
   const skills = window.MAHJONG_SKILLS || [];
   const byId = Object.fromEntries(skills.map((s) => [s.id, s]));
   const MAX_DRAW = 6;
+  const MIN_PLAYERS = 2; // 必须与 server/room-manager.js 中 MIN_PLAYERS 保持一致
 
   const LS = { token: "mj-room-token", code: "mj-room-code", url: "mj-server-url" };
   const $ = (id) => document.getElementById(id);
@@ -38,6 +39,7 @@
     roomConn: $("roomConn"),
     leaveBtn: $("leaveBtn"),
     hostPanel: $("hostPanel"),
+    startBtnRoom: $("startBtnRoom"),
     resetBtnRoom: $("resetBtnRoom"),
     players: $("players"),
     playerCount: $("playerCount"),
@@ -246,6 +248,17 @@
       case "rooms":
         renderRoomList(msg.list);
         break;
+      case "room_closed":
+        // 房主离开导致房间解散
+        showToast("房间已解散（房主已离开）");
+        clearSession();
+        showLobby();
+        setConn("idle");
+        setStatus("房间已解散，请重新创建或加入。");
+        break;
+      case "left":
+        // 自己主动离开，已由本地逻辑处理；此处无需额外动作
+        break;
       case "error":
         handleError(msg);
         break;
@@ -290,6 +303,15 @@
     el.roomRound.textContent = `第 ${snapshot.round} 局`;
     el.roomRole.textContent = snapshot.me.isHost ? "房主" : "玩家";
     el.hostPanel.hidden = !snapshot.me.isHost;
+    // 房主「开始游戏」按钮：仅游戏未开始时显示；人数不足时禁用并提示
+    if (snapshot.me.isHost && !snapshot.started) {
+      el.startBtnRoom.hidden = false;
+      const enough = snapshot.players.length >= MIN_PLAYERS;
+      el.startBtnRoom.disabled = !enough;
+      if (!enough) setStatus(`至少需要 ${MIN_PLAYERS} 名玩家才能开始（当前 ${snapshot.players.length}）`);
+    } else {
+      el.startBtnRoom.hidden = true;
+    }
     renderPlayers();
     renderHand();
     renderBoard();
@@ -319,8 +341,17 @@
 
   function renderHand() {
     const cards = snapshot.privateCards || [];
+    // 游戏尚未开始：禁止抽牌，展示等待提示
+    if (!snapshot.started) {
+      el.drawArea.hidden = false;
+      el.drawBtnRoom.disabled = true;
+      el.drawBtnRoom.textContent = snapshot.me.isHost ? "等待开始游戏…" : "等待房主开始游戏…";
+      el.roomHand.innerHTML = '<p class="empty">游戏尚未开始，等待房主点击「开始游戏」</p>';
+      return;
+    }
     if (cards.length === 0) {
       el.drawArea.hidden = false;
+      el.drawBtnRoom.disabled = false;
       el.drawBtnRoom.textContent = `抽牌（${snapshot.drawCount} 张）`;
       el.roomHand.innerHTML = "";
       return;
@@ -572,6 +603,13 @@
     });
 
     el.drawBtnRoom.addEventListener("click", () => send({ type: "draw", token }));
+    el.startBtnRoom.addEventListener("click", () => {
+      if (!snapshot || snapshot.started) return;
+      if (snapshot.players.length < MIN_PLAYERS) {
+        return setStatus(`至少需要 ${MIN_PLAYERS} 名玩家才能开始`);
+      }
+      sendOrQueue({ type: "start", token }, "正在连接服务器，连上后会开始游戏…");
+    });
     el.resetBtnRoom.addEventListener("click", () => {
       askConfirm("确定重置本局？将清空所有玩家的手牌与公开记录，开始新一局（房间/成员/配置保留）。", () => {
         send({ type: "reset", token });
@@ -579,11 +617,19 @@
     });
 
     el.leaveBtn.addEventListener("click", () => {
-      if (ws) {
-        intentionalClose = true; // 主动离开，别再自动重连
-        ws.close();
+      // 主动离开：先通知服务端（房主离开会解散房间），再关闭连接、退回大厅、不再自动重连
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        send({ type: "leave", token });
       }
+      intentionalClose = true;
       pendingAction = null;
+      if (ws) {
+        try {
+          ws.close();
+        } catch (e) {
+          /* ignore */
+        }
+      }
       clearSession();
       showLobby();
       setConn("idle");

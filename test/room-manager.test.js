@@ -62,6 +62,7 @@ test("allows four distinct players and rejects a fifth or duplicate name", () =>
 test("draws different cards for one player without preventing another player drawing the same skill", () => {
   const manager = createManager();
   const { host, guest } = createTwoPlayerRoom(manager, 2);
+  manager.startGame(host.sessionToken);
 
   const hostFirst = manager.drawCard(host.sessionToken);
   const hostSecond = manager.drawCard(host.sessionToken);
@@ -80,6 +81,7 @@ test("never includes an opponent's unplayed card name or rule in a player's snap
     random: () => sequence[pick++ % sequence.length],
   });
   const { host, guest } = createTwoPlayerRoom(manager);
+  manager.startGame(host.sessionToken);
   const hostState = manager.drawCard(host.sessionToken);
   const guestState = manager.drawCard(guest.sessionToken);
   const hostCard = hostState.privateCards[0];
@@ -95,6 +97,7 @@ test("never includes an opponent's unplayed card name or rule in a player's snap
 test("use publishes only the used card name and rule to every player", () => {
   const manager = createManager();
   const { host, guest } = createTwoPlayerRoom(manager);
+  manager.startGame(host.sessionToken);
   const card = manager.drawCard(host.sessionToken).privateCards[0];
 
   const published = manager.useCard(host.sessionToken, card.id);
@@ -114,6 +117,7 @@ test("use publishes only the used card name and rule to every player", () => {
 test("only the host can reset, preserving room settings and players while clearing every card", () => {
   const manager = createManager();
   const { host, guest } = createTwoPlayerRoom(manager, 2);
+  manager.startGame(host.sessionToken);
   manager.drawCard(host.sessionToken);
   manager.drawCard(guest.sessionToken);
   const before = manager.snapshotFor(host.sessionToken);
@@ -137,16 +141,107 @@ test("only the host can reset, preserving room settings and players while cleari
 test("restores a disconnected player's original seat using only their session token", () => {
   const manager = createManager();
   const { host, guest } = createTwoPlayerRoom(manager);
+  manager.startGame(host.sessionToken);
   manager.drawCard(host.sessionToken);
   const playerId = manager.snapshotFor(host.sessionToken).me.id;
 
-  const offline = manager.disconnect(host.sessionToken);
+  manager.disconnect(host.sessionToken);
+  const offlineSnap = manager.snapshotFor(host.sessionToken);
   const restored = manager.resume(guest.sessionToken);
   const hostRestored = manager.resume(host.sessionToken);
 
-  assert.equal(offline.players.find((player) => player.id === playerId).online, false);
+  assert.equal(offlineSnap.players.find((player) => player.id === playerId).online, false);
   assert.equal(hostRestored.me.id, playerId);
   assert.equal(hostRestored.privateCards.length, 1);
   assert.equal(hostRestored.players.find((player) => player.id === playerId).online, true);
   assert.equal(restored.me.name, "玩家二");
+});
+
+test("未开始游戏禁止抽牌；房主开始后开放，重置后回到未开始", () => {
+  const manager = createManager();
+  const { host, guest } = createTwoPlayerRoom(manager, 2);
+  assert.equal(host.snapshot.started, false, "创建后默认未开始");
+  assert.throws(() => manager.drawCard(host.sessionToken), (e) => e.code === "NOT_STARTED");
+
+  // 仅 1 人无法开始
+  const solo = manager.createRoom({
+    name: "独狼",
+    skillIds: availableSkills.map((s) => s.id),
+    drawCount: 1,
+  });
+  assert.throws(() => manager.startGame(solo.sessionToken), (e) => e.code === "NOT_ENOUGH_PLAYERS");
+
+  const started = manager.startGame(host.sessionToken);
+  assert.equal(started.started, true);
+  assert.throws(() => manager.startGame(host.sessionToken), (e) => e.code === "ALREADY_STARTED");
+  assert.throws(() => manager.startGame(guest.sessionToken), (e) => e.code === "FORBIDDEN");
+
+  const drawn = manager.drawCard(host.sessionToken);
+  assert.equal(drawn.privateCards.length, 1);
+
+  const reset = manager.resetRoom(host.sessionToken);
+  assert.equal(reset.started, false, "重置后回到未开始");
+  assert.throws(() => manager.drawCard(host.sessionToken), (e) => e.code === "NOT_STARTED");
+});
+
+test("断线玩家以相同昵称重连复用座位，而非报重复", () => {
+  const manager = createManager();
+  const host = manager.createRoom({
+    name: "房主",
+    skillIds: availableSkills.map((s) => s.id),
+    drawCount: 2,
+  });
+  const guest = manager.joinRoom({ roomCode: host.roomCode, name: "小明" });
+  manager.disconnect(guest.sessionToken); // 小明离线
+
+  const rejoined = manager.joinRoom({ roomCode: host.roomCode, name: " 小明 " });
+  assert.equal(rejoined.snapshot.me.id, guest.snapshot.me.id, "应复用原座位");
+  assert.notEqual(rejoined.sessionToken, guest.sessionToken, "应重新签发令牌");
+  assert.equal(rejoined.snapshot.privateCards.length, 0);
+
+  // 在线同名仍报错
+  assert.throws(
+    () => manager.joinRoom({ roomCode: host.roomCode, name: " 房主 " }),
+    (e) => e.code === "DUPLICATE_NAME",
+  );
+});
+
+test("房主离开即销毁房间并通知其余玩家；断线进入宽限期，超时才销毁", async () => {
+  const manager = new RoomManager({ skills: availableSkills, random: () => 0 });
+  const { host, guest } = createTwoPlayerRoom(manager);
+  let closedTokens = null;
+  manager.onRoomClosed = (tokens) => {
+    closedTokens = tokens;
+  };
+
+  const left = manager.leaveRoom(host.sessionToken);
+  assert.equal(left.destroyed, true, "房主离开应解散房间");
+  assert.equal(manager.rooms.has(host.roomCode), false, "房间应被销毁");
+  assert.ok(closedTokens && closedTokens.includes(guest.sessionToken), "应通知其余玩家");
+
+  // 断线宽限期：房间仅一名玩家且全员离线 → 安排清理；
+  // 宽限内重连可恢复，超时则销毁
+  const m2 = new RoomManager({ skills: availableSkills, random: () => 0, graceMs: 40 });
+  const solo = m2.createRoom({
+    name: "独狼",
+    skillIds: availableSkills.map((s) => s.id),
+    drawCount: 1,
+  });
+  const pid = solo.snapshot.me.id;
+  m2.disconnect(solo.sessionToken); // 无人在线 → 安排清理
+  assert.equal(m2.rooms.has(solo.roomCode), true, "宽限期内房间仍在");
+  const resumed = m2.resume(solo.sessionToken);
+  assert.equal(
+    resumed.players.find((p) => p.id === pid).online,
+    true,
+    "宽限内重连可恢复",
+  );
+  m2.disconnect(solo.sessionToken); // 再次断线，等超时
+  let destroyed = false;
+  m2.onRoomClosed = () => {
+    destroyed = true;
+  };
+  await new Promise((r) => setTimeout(r, 90));
+  assert.equal(m2.rooms.has(solo.roomCode), false, "超时后房间销毁");
+  assert.equal(destroyed, true);
 });

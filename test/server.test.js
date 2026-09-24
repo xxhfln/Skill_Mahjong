@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { WebSocket } = require("ws");
 const skills = require("../js/skills.js");
-const { startServer, getWss } = require("../server/index.js");
+const { startServer, getWss, getManager } = require("../server/index.js");
 
 const PORT = 3199;
 const URL = `ws://localhost:${PORT}/ws`;
@@ -76,6 +76,7 @@ test.before(() => {
 });
 
 test.after(() => {
+  getManager()?.stop?.();
   getWss()?.close();
   server.close();
 });
@@ -116,6 +117,9 @@ test("建房/加入并各自抽到互不重复卡；保密性成立", async () =
     (m) => m.snapshot.players.length === 2,
   );
 
+  // 房主开始游戏后，玩家方可抽牌
+  await a.act({ type: "start", token: created.token }, (m) => m.snapshot.started === true);
+
   const aDrawn = await a.act(
     { type: "draw", token: created.token },
     (m) => m.snapshot.privateCards.length === 2,
@@ -152,6 +156,8 @@ test("使用卡牌后全员可见；不同玩家可抽到相同技能", async ()
     (m) => m.snapshot.players.length === 2,
   );
 
+  await a.act({ type: "start", token: created.token }, (m) => m.snapshot.started === true);
+
   const aDrawn = await a.act(
     { type: "draw", token: created.token },
     (m) => m.snapshot.privateCards.length === 1,
@@ -184,6 +190,9 @@ test("仅房主可重置；重置清空手牌并保留配置与成员，局数�
     { type: "join", roomCode, name: "玩家二" },
     (m) => m.snapshot.players.length === 2,
   );
+
+  // 房主开始游戏，否则抽牌会被拒
+  await a.act({ type: "start", token: created.token }, (m) => m.snapshot.started === true);
 
   // 非房主重置应被拒
   b.send({ type: "reset", token: b.last("state") ? b.last("state").token : null });
@@ -218,6 +227,13 @@ test("持令牌重连可恢复原座位", async () => {
   );
   const token = created.token;
   const roomCode = created.snapshot.roomCode;
+
+  // 至少 2 人才能开始游戏
+  const b = makeClient();
+  await b.open;
+  await b.act({ type: "join", roomCode, name: "玩家二" }, (m) => m.snapshot.players.length === 2);
+  await a.act({ type: "start", token }, (m) => m.snapshot.started === true);
+
   await a.act(
     { type: "draw", token },
     (m) => m.snapshot.privateCards.length === 2,
@@ -225,6 +241,7 @@ test("持令牌重连可恢复原座位", async () => {
   const idBefore = created.snapshot.me.id;
 
   a.close();
+  b.close();
   await new Promise((r) => setTimeout(r, 150));
 
   const a2 = makeClient();
@@ -278,4 +295,77 @@ test("无效消息被拒绝且不崩溃", async () => {
   const err = await a.waitFor((m) => m.type === "error");
   assert.equal(err.type, "error");
   a.close();
+});
+
+test("未开始游戏时抽牌被拒；房主开始后开放", async () => {
+  const a = makeClient();
+  const b = makeClient();
+  await Promise.all([a.open, b.open]);
+
+  const created = await a.act(
+    { type: "create", name: "房主", skillIds: ALL_IDS, drawCount: 2 },
+    (m) => !!m.token,
+  );
+  const roomCode = created.snapshot.roomCode;
+
+  await b.act(
+    { type: "join", roomCode, name: "玩家二" },
+    (m) => m.snapshot.players.length === 2,
+  );
+
+  // 未开始抽牌被拒
+  a.send({ type: "draw", token: created.token });
+  const denied = await a.waitFor((m) => m.type === "error" && m.code === "NOT_STARTED");
+  assert.equal(denied.code, "NOT_STARTED");
+
+  // 房主开始游戏
+  const started = await a.act(
+    { type: "start", token: created.token },
+    (m) => m.snapshot.started === true,
+  );
+  assert.equal(started.snapshot.started, true);
+
+  // 现在可以抽牌
+  const drawn = await a.act(
+    { type: "draw", token: created.token },
+    (m) => m.snapshot.privateCards.length === 2,
+  );
+  assert.equal(drawn.snapshot.privateCards.length, 2);
+
+  a.close();
+  b.close();
+});
+
+test("房主离开销毁房间，其余玩家收到 room_closed", async () => {
+  const a = makeClient();
+  const b = makeClient();
+  await Promise.all([a.open, b.open]);
+
+  const created = await a.act(
+    { type: "create", name: "房主", skillIds: ALL_IDS, drawCount: 2 },
+    (m) => !!m.token,
+  );
+  const roomCode = created.snapshot.roomCode;
+  const joined = await b.act(
+    { type: "join", roomCode, name: "玩家二" },
+    (m) => m.snapshot.players.length === 2,
+  );
+
+  // 房主离开
+  a.send({ type: "leave", token: created.token });
+  const closed = await b.waitFor((m) => m.type === "room_closed");
+  assert.ok(closed, "其余玩家应收到 room_closed");
+
+  // 房间已不存在：房主再 resume 应失败（房间销毁即会话失效）
+  const a2 = makeClient();
+  await a2.open;
+  a2.send({ type: "resume", token: created.token, roomCode });
+  const err = await a2.waitFor(
+    (m) => m.type === "error" && (m.code === "ROOM_NOT_FOUND" || m.code === "INVALID_SESSION"),
+  );
+  assert.ok(err.code === "ROOM_NOT_FOUND" || err.code === "INVALID_SESSION");
+
+  a.close();
+  b.close();
+  a2.close();
 });

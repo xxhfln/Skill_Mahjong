@@ -15,6 +15,22 @@ const MAX_MESSAGE_BYTES = 16 * 1024; // 协议上限 16 KiB
 
 const manager = new RoomManager({ skills });
 
+// 房间被销毁（房主离开 / 全员离线超时）时，通知并关闭其余玩家的连接
+function notifyRoomClosed(tokens) {
+  for (const token of tokens) {
+    const ws = tokenToWs.get(token);
+    if (!ws) continue;
+    send(ws, { type: "room_closed" });
+    tokenToWs.delete(token);
+    try {
+      ws.close();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+}
+manager.onRoomClosed = notifyRoomClosed;
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -143,6 +159,23 @@ function handleMessage(ws, msg) {
         tokenToWs.set(ws.token, ws);
         return send(ws, { type: "state", snapshot });
       }
+      case "start": {
+        if (!ws.token) return error(ws, "NO_SESSION", "请先加入房间");
+        manager.startGame(ws.token);
+        return broadcastRoom(ws.roomCode);
+      }
+      case "leave": {
+        if (!ws.token) return error(ws, "NO_SESSION", "请先加入房间");
+        const result = manager.leaveRoom(ws.token);
+        if (result.destroyed) {
+          // 房间已销毁，其余玩家由 notifyRoomClosed 通知；离开者本地已退到大厅
+          return send(ws, { type: "left" });
+        }
+        tokenToWs.delete(ws.token);
+        ws.token = null;
+        send(ws, { type: "left" });
+        return broadcastRoom(ws.roomCode);
+      }
       case "list_rooms":
         return send(ws, { type: "rooms", list: manager.listRooms() });
       case "draw": {
@@ -206,7 +239,14 @@ function attachWebSocket(httpServer) {
         }
         const code = ws.roomCode;
         tokenToWs.delete(ws.token);
-        if (code) broadcastRoom(code);
+        if (code) {
+          // 房间可能已被销毁（如房主先离开触发销毁），广播需容错
+          try {
+            broadcastRoom(code);
+          } catch (e) {
+            /* 房间不存在则忽略 */
+          }
+        }
       }
     });
 
@@ -258,4 +298,4 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { startServer, manager, getWss: () => wss };
+module.exports = { startServer, manager, getManager: () => manager, getWss: () => wss };
