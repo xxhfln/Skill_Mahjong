@@ -1619,3 +1619,150 @@ button {
   flex: 1;
 }
 
+/* ============================================================
+   房间模式 · 东南西北罗盘座位
+   四个槽位 UI 固定（上=北 右=东 下=南 左=西），玩家在槽位间移动；
+   未开始时锚点固定为南（下方），开始后每位玩家视角旋转到自身在下方。
+   ============================================================ */
+
+.seats {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  margin: 6px auto 10px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  grid-template-areas:
+    ".  n  ."
+    "w  c  e"
+    ".  s  .";
+  gap: 8px;
+}
+
+.seat {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  min-height: 60px;
+  padding: 8px 6px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  -webkit-transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.seat--N { grid-area: n; }
+.seat--E { grid-area: e; }
+.seat--S { grid-area: s; }
+.seat--W { grid-area: w; }
+
+.seat__dir {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: #f3d99a;
+}
+
+.seat__name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #fff8ea;
+  line-height: 1.2;
+  word-break: break-all;
+}
+
+.seat__host,
+.seat__you {
+  font-style: normal;
+  font-size: 0.64rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(226, 182, 90, 0.2);
+  color: #f3d99a;
+  margin-left: 3px;
+}
+
+.seat__info {
+  font-size: 0.7rem;
+  color: #b7ae9a;
+}
+
+.seat--me {
+  border-color: #2f9b72;
+  box-shadow: 0 0 0 1px #2f9b72 inset, 0 8px 18px rgba(47, 155, 114, 0.25);
+}
+
+.seat--empty {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.seat--empty .seat__dir {
+  color: #8c8472;
+}
+
+.seat--pickable {
+  cursor: pointer;
+}
+
+.seat--pickable:active {
+  -webkit-transform: scale(0.97);
+  transform: scale(0.97);
+  border-color: var(--gold);
+}
+
+.seat.is-offline {
+  opacity: 0.5;
+}
+
+.seats__center {
+  grid-area: c;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(226, 182, 90, 0.1);
+  border: 1px solid rgba(226, 182, 90, 0.3);
+  padding: 6px;
+}
+
+.seats__center-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: #f3d99a;
+  text-align: center;
+}
+
+.pregame-hint {
+  margin: 4px 2px 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #e8dfc8;
+  background: rgba(226, 182, 90, 0.1);
+  border: 1px solid rgba(226, 182, 90, 0.28);
+  text-align: center;
+}
+
+.pregame-hint[hidden] {
+  display: none !important;
+}
+
+.room-section[hidden] {
+  display: none !important;
+}
+

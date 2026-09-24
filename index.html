@@ -21,7 +21,7 @@
     <meta http-equiv="Expires" content="0" />
     <title>技能麻将</title>
     <!-- 微信内置浏览器常无法稳定加载 Google Fonts，优先系统中文字体 -->
-    <link rel="stylesheet" href="css/style.css?v=20260924c" />
+    <link rel="stylesheet" href="css/style.css?v=20260924d" />
   </head>
   <body>
     <div class="bg-layer" aria-hidden="true"></div>
@@ -140,19 +140,27 @@
             <button type="button" class="btn btn-ghost btn-block" id="resetBtnRoom">重置本局（清空所有手牌）</button>
           </div>
 
-          <h3 class="section-title">玩家（<span id="playerCount">0</span>）</h3>
-          <ul class="players" id="players"></ul>
+          <!-- 东南西北罗盘座位：四个槽位 UI 固定，玩家在槽位间移动 -->
+          <div class="seats" id="seats"></div>
 
-          <h3 class="section-title">你的手牌</h3>
-          <div id="drawArea">
-            <button type="button" class="btn btn-primary btn-block" id="drawBtnRoom">抽牌</button>
-          </div>
-          <div class="hand" id="roomHand" aria-label="你的手牌"></div>
+          <p class="pregame-hint" id="preGameHint" hidden>
+            等待房主「开始游戏」。下方为南方，玩家按东南西北就坐；点空位可换座位。
+          </p>
 
-          <h3 class="section-title">已公开技能</h3>
-          <div class="board" id="board">
-            <p class="empty">还没有人公开技能</p>
-          </div>
+          <section class="room-section" id="handSection" hidden>
+            <h3 class="section-title">你的手牌</h3>
+            <div id="drawArea">
+              <button type="button" class="btn btn-primary btn-block" id="drawBtnRoom">抽牌</button>
+            </div>
+            <div class="hand" id="roomHand" aria-label="你的手牌"></div>
+          </section>
+
+          <section class="room-section" id="boardSection" hidden>
+            <h3 class="section-title">已使用技能</h3>
+            <div class="board" id="board">
+              <p class="empty">还没有人使用技能</p>
+            </div>
+          </section>
         </div>
       </section>
     </main>
@@ -233,9 +241,9 @@
     <script>
       window.__WS_URL__ = "__MJ_WS_URL__";
     </script>
-    <script src="js/config.js?v=20260924c"></script>
-    <script src="js/skills.js?v=20260924c"></script>
-    <script src="js/app.js?v=20260924c"></script>
-    <script src="js/rooms.js?v=20260924c"></script>
+    <script src="js/config.js?v=20260924d"></script>
+    <script src="js/skills.js?v=20260924d"></script>
+    <script src="js/app.js?v=20260924d"></script>
+    <script src="js/rooms.js?v=20260924d"></script>
   </body>
 </html>

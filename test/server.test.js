@@ -369,3 +369,46 @@ test("房主离开销毁房间，其余玩家收到 room_closed", async () => {
   b.close();
   a2.close();
 });
+
+test("玩家可在开始游戏前改坐空位，且开始后座位锁定", async () => {
+  const a = makeClient();
+  const b = makeClient();
+  const c = makeClient();
+  await Promise.all([a.open, b.open, c.open]);
+
+  const created = await a.act(
+    { type: "create", name: "房主", skillIds: ALL_IDS, drawCount: 2 },
+    (m) => !!m.token,
+  );
+  const roomCode = created.snapshot.roomCode;
+  assert.equal(created.snapshot.me.direction, "S", "房主默认坐南");
+
+  await b.act({ type: "join", roomCode, name: "玩家二" }, (m) => m.snapshot.players.length === 2);
+  await c.act({ type: "join", roomCode, name: "玩家三" }, (m) => m.snapshot.players.length === 3);
+
+  // 房主改坐空位（西），应成功，且其余玩家同步可见
+  const moved = await a.act(
+    { type: "sit", token: created.token, direction: "W" },
+    (m) => m.snapshot.me.direction === "W",
+  );
+  assert.equal(moved.snapshot.me.direction, "W");
+
+  const bSees = await b.waitFor(
+    (m) =>
+      m.type === "state" &&
+      m.snapshot.players.find((p) => p.name === "房主")?.direction === "W",
+  );
+  const aInB = bSees.snapshot.players.find((p) => p.name === "房主");
+  assert.equal(aInB.direction, "W", "其余玩家应看到房主改坐西");
+
+  // 开始游戏后，再改座应被拒
+  await a.act({ type: "start", token: created.token }, (m) => m.snapshot.started === true);
+  a.send({ type: "sit", token: created.token, direction: "E" });
+  const denied = await a.waitFor((m) => m.type === "error" && m.code === "GAME_STARTED");
+  assert.equal(denied.code, "GAME_STARTED");
+
+  a.close();
+  b.close();
+  c.close();
+});
+

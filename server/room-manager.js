@@ -4,6 +4,11 @@ const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 4;
 const MAX_DRAW_COUNT = 6;
 
+// 座位方位（顺时针：北、东、南、西），索引与客户端约定一致：N=0, E=1, S=2, W=3
+const DIRECTIONS = ["N", "E", "S", "W"];
+// 默认就坐顺序：房主坐南，之后进来的玩家依次坐 东、北、西
+const SEAT_ORDER = ["S", "E", "N", "W"];
+
 class RoomError extends Error {
   constructor(code, message) {
     super(message);
@@ -275,11 +280,32 @@ class RoomManager {
       name,
       isHost,
       online: true,
+      direction: this.nextFreeDirection(room),
       cards: new Map(),
       sessionToken: randomBytes(32).toString("base64url"),
     };
     this.sessions.set(player.sessionToken, { room, player });
     return player;
+  }
+
+  // 在 SEAT_ORDER 中挑第一个未被占用的方位；满员时返回 null
+  nextFreeDirection(room) {
+    const taken = new Set([...room.players.values()].map((p) => p.direction));
+    return SEAT_ORDER.find((dir) => !taken.has(dir)) || null;
+  }
+
+  // 选座：仅游戏开始前可改；目标方位被他人占用或游戏已开始则拒绝
+  chooseDirection(sessionToken, direction) {
+    const { room, player } = this.resolveSession(sessionToken);
+    if (room.started) throw new RoomError("GAME_STARTED", "游戏已开始，座位已锁定");
+    if (!DIRECTIONS.includes(direction)) throw new RoomError("INVALID_DIRECTION", "方位无效");
+    if (player.direction === direction) return this.snapshotForPlayer(room, player); // 没变，直接返回
+    const occupied = [...room.players.values()].some(
+      (other) => other.id !== player.id && other.direction === direction,
+    );
+    if (occupied) throw new RoomError("SEAT_TAKEN", "该方位已有其他玩家");
+    player.direction = direction;
+    return this.snapshotForPlayer(room, player);
   }
 
   resultFor(room, player) {
@@ -316,12 +342,13 @@ class RoomManager {
       drawCount: room.drawCount,
       skillCount: room.skillIds.length,
       poolSkillIds: [...room.skillIds],
-      me: { id: player.id, name: player.name, isHost: player.isHost },
+      me: { id: player.id, name: player.name, isHost: player.isHost, direction: player.direction },
       players: [...room.players.values()].map((member) => ({
         id: member.id,
         name: member.name,
         isHost: member.isHost,
         online: member.online,
+        direction: member.direction,
         drawnCount: member.cards.size,
       })),
       privateCards: [...player.cards.entries()].map(([id, used]) => ({ ...this.skillsById.get(id), used })),
@@ -355,4 +382,4 @@ function normalizeName(name) {
   return name.trim().slice(0, 20);
 }
 
-module.exports = { RoomManager, RoomError, MIN_PLAYERS, MAX_PLAYERS, MAX_DRAW_COUNT };
+module.exports = { RoomManager, RoomError, MIN_PLAYERS, MAX_PLAYERS, MAX_DRAW_COUNT, DIRECTIONS, SEAT_ORDER };

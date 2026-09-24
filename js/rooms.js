@@ -7,6 +7,9 @@
   const byId = Object.fromEntries(skills.map((s) => [s.id, s]));
   const MAX_DRAW = 6;
   const MIN_PLAYERS = 2; // 必须与 server/room-manager.js 中 MIN_PLAYERS 保持一致
+  // 座位方位，索引与 server/room-manager.js 的 DIRECTIONS 保持一致：N=0, E=1, S=2, W=3
+  const DIRECTIONS = ["N", "E", "S", "W"];
+  const DIR_LABEL = { N: "北", E: "东", S: "南", W: "西" };
 
   const LS = { token: "mj-room-token", code: "mj-room-code", url: "mj-server-url" };
   const $ = (id) => document.getElementById(id);
@@ -41,8 +44,10 @@
     hostPanel: $("hostPanel"),
     startBtnRoom: $("startBtnRoom"),
     resetBtnRoom: $("resetBtnRoom"),
-    players: $("players"),
-    playerCount: $("playerCount"),
+    seats: $("seats"),
+    handSection: $("handSection"),
+    boardSection: $("boardSection"),
+    preGameHint: $("preGameHint"),
     drawArea: $("drawArea"),
     drawBtnRoom: $("drawBtnRoom"),
     roomHand: $("roomHand"),
@@ -82,6 +87,17 @@
 
   function fmtRule(rule) {
     return String(rule || "").replace(/([。；])/g, "$1\n").replace(/\n+$/g, "");
+  }
+
+  function dirIndex(d) {
+    return DIRECTIONS.indexOf(d);
+  }
+
+  // 将某方位映射到屏幕槽位：0=上(北) 1=右(东) 2=下(南) 3=左(西)
+  // 未开始时锚点固定为南(2)：所有人看到绝对方位（南在下、北在上）。
+  // 开始后锚点=本人方位：本人座位旋转到下方，其余玩家相对位置不变。
+  function dirToSlot(dir, anchor) {
+    return ((dirIndex(dir) - anchor + 2) % 4 + 4) % 4;
   }
 
   /* 服务端只接管 /ws 路径。地址缺路径时握手会被拒(400)，
@@ -299,12 +315,19 @@
 
   function render() {
     if (!snapshot) return;
+    const started = snapshot.started;
     el.roomCode.textContent = snapshot.roomCode;
     el.roomRound.textContent = `第 ${snapshot.round} 局`;
     el.roomRole.textContent = snapshot.me.isHost ? "房主" : "玩家";
     el.hostPanel.hidden = !snapshot.me.isHost;
-    // 房主「开始游戏」按钮：仅游戏未开始时显示；人数不足时禁用并提示
-    if (snapshot.me.isHost && !snapshot.started) {
+
+    // 未开始阶段：隐藏「你的手牌」「已使用技能」与「重置本局」；仅显示座位与开始按钮
+    el.handSection.hidden = started;
+    el.boardSection.hidden = started;
+    el.preGameHint.hidden = started;
+
+    // 房主「开始游戏」按钮：仅未开始时显示；人数不足时禁用并提示
+    if (snapshot.me.isHost && !started) {
       el.startBtnRoom.hidden = false;
       const enough = snapshot.players.length >= MIN_PLAYERS;
       el.startBtnRoom.disabled = !enough;
@@ -312,31 +335,56 @@
     } else {
       el.startBtnRoom.hidden = true;
     }
-    renderPlayers();
+    // 重置按钮：仅房主且已开始时可见
+    el.resetBtnRoom.hidden = !(snapshot.me.isHost && started);
+
+    renderSeats();
     renderHand();
     renderBoard();
   }
 
-  function renderPlayers() {
-    const list = el.players;
-    list.innerHTML = "";
+  // 东南西北罗盘座位：四个槽位 UI 固定（上=北 右=东 下=南 左=西），
+  // 槽位本身不动，玩家在槽位间移动；开始后每位玩家视角旋转到自己位于下方。
+  function renderSeats() {
+    const started = snapshot.started;
+    const anchor = started ? dirIndex(snapshot.me.direction) : 2; // 未开始锚点=南(2)，绝对方位；开始后锚点=本人
+    const myId = snapshot.me.id;
+    const playersByDir = new Map(snapshot.players.map((p) => [p.direction, p]));
+    const container = el.seats;
+    container.innerHTML = "";
     const frag = document.createDocumentFragment();
-    snapshot.players.forEach((p) => {
-      const used = snapshot.publicCards.filter((c) => c.ownerId === p.id).length;
-      const li = document.createElement("li");
-      li.className = "player" + (p.online ? "" : " is-offline");
-      const backs = Array.from({ length: p.drawnCount })
-        .map(() => '<span class="cardback"></span>')
-        .join("");
-      li.innerHTML =
-        `<span class="player__dot"></span>` +
-        `<span class="player__name">${escapeHtml(p.name)}${p.isHost ? ' <em class="player__host">房主</em>' : ""}</span>` +
-        `<span class="player__info">抽 ${p.drawnCount} · 公开 ${used}</span>` +
-        `<span class="player__backs">${backs || '<span class="player__none">未抽</span>'}</span>`;
-      frag.appendChild(li);
-    });
-    list.appendChild(frag);
-    el.playerCount.textContent = snapshot.players.length;
+
+    const center = document.createElement("div");
+    center.className = "seats__center";
+    center.innerHTML = `<span class="seats__center-label">${started ? "进行中" : "等待开始"}</span>`;
+    frag.appendChild(center);
+
+    // 屏幕四个固定槽位：0=上(北) 1=右(东) 2=下(南) 3=左(西)
+    for (let slot = 0; slot < 4; slot += 1) {
+      const dir = DIRECTIONS[slot]; // 该槽位固定显示的方位角标
+      const absDir = DIRECTIONS[((slot - 2 + anchor) % 4 + 4) % 4]; // 当前锚点下映射到该槽位的真实方位
+      const player = playersByDir.get(absDir);
+      const seat = document.createElement("div");
+      seat.className = `seat seat--${dir}`;
+      if (!player) {
+        seat.classList.add("seat--empty");
+        seat.innerHTML = `<div class="seat__empty">空位<br><span class="seat__dir">${DIR_LABEL[absDir]}</span></div>`;
+        if (!started) {
+          seat.classList.add("seat--pickable");
+          seat.addEventListener("click", () => send({ type: "sit", token, direction: absDir }));
+        }
+      } else {
+        const used = snapshot.publicCards.filter((c) => c.ownerId === player.id).length;
+        if (player.id === myId) seat.classList.add("seat--me");
+        if (!player.online) seat.classList.add("is-offline");
+        seat.innerHTML =
+          `<span class="seat__dir">${DIR_LABEL[player.direction]}</span>` +
+          `<span class="seat__name">${escapeHtml(player.name)}${player.isHost ? ' <em class="seat__host">房主</em>' : ""}${player.id === myId ? ' <em class="seat__you">你</em>' : ""}</span>` +
+          `<span class="seat__info">抽 ${player.drawnCount} · 已用 ${used}</span>`;
+      }
+      frag.appendChild(seat);
+    }
+    container.appendChild(frag);
   }
 
   function renderHand() {
@@ -400,7 +448,7 @@
   function renderBoard() {
     const cards = snapshot.publicCards || [];
     if (cards.length === 0) {
-      el.board.innerHTML = '<p class="empty">还没有人公开技能</p>';
+      el.board.innerHTML = '<p class="empty">还没有人使用技能</p>';
       return;
     }
     el.board.innerHTML = "";
@@ -410,7 +458,7 @@
       e.className = "effect";
       e.innerHTML =
         `<div class="effect__head">` +
-        `<span class="effect__tag">${escapeHtml(skill.ownerName || "某人")} 公开</span>` +
+        `<span class="effect__tag">${escapeHtml(skill.ownerName || "某人")} 使用了</span>` +
         `<span class="effect__name">${escapeHtml(skill.name)}</span>` +
         `<span class="effect__code">${escapeHtml(skill.code)} · ${escapeHtml(skill.group)}</span>` +
         `</div>` +

@@ -206,6 +206,44 @@ test("断线玩家以相同昵称重连复用座位，而非报重复", () => {
   );
 });
 
+test("默认按 南东北西 顺序分配方位；玩家可改坐空位，开始后锁定", () => {
+  const manager = createManager();
+  const host = manager.createRoom({
+    name: "房主",
+    skillIds: availableSkills.map((s) => s.id),
+    drawCount: 2,
+  });
+  // 房主默认坐南（SEAT_ORDER 首位）
+  assert.equal(host.snapshot.me.direction, "S", "房主默认坐南");
+
+  const e = manager.joinRoom({ roomCode: host.roomCode, name: "东家" });
+  const n = manager.joinRoom({ roomCode: host.roomCode, name: "北家" });
+  const w = manager.joinRoom({ roomCode: host.roomCode, name: "西家" });
+  assert.equal(e.snapshot.me.direction, "E", "第二位坐东");
+  assert.equal(n.snapshot.me.direction, "N", "第三位坐北");
+  assert.equal(w.snapshot.me.direction, "W", "第四位坐西");
+
+  // 等待阶段可改坐空位（即使满员这种场景下改去他人空位需对方先离开，这里测空位占用）
+  // 东家改坐北：北此时被占 → 应拒绝
+  assert.throws(
+    () => manager.chooseDirection(e.sessionToken, "N"),
+    (err) => err.code === "SEAT_TAKEN",
+  );
+
+  // 北家离开后，东家可改坐北（空位）
+  manager.leaveRoom(n.sessionToken);
+  const moved = manager.chooseDirection(e.sessionToken, "N");
+  assert.equal(moved.me.direction, "N", "改坐空位成功");
+
+  // 游戏开始后再选座应被拒
+  manager.joinRoom({ roomCode: host.roomCode, name: "北家2" });
+  manager.startGame(host.sessionToken);
+  assert.throws(
+    () => manager.chooseDirection(e.sessionToken, "W"),
+    (err) => err.code === "GAME_STARTED",
+  );
+});
+
 test("房主离开即销毁房间并通知其余玩家；断线进入宽限期，超时才销毁", async () => {
   const manager = new RoomManager({ skills: availableSkills, random: () => 0 });
   const { host, guest } = createTwoPlayerRoom(manager);

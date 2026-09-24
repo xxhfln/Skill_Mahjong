@@ -164,6 +164,12 @@ function handleMessage(ws, msg) {
         manager.startGame(ws.token);
         return broadcastRoom(ws.roomCode);
       }
+      case "sit": {
+        if (!ws.token) return error(ws, "NO_SESSION", "请先加入房间");
+        if (typeof msg.direction !== "string") return error(ws, "BAD_MESSAGE", "缺少方位");
+        manager.chooseDirection(ws.token, msg.direction);
+        return broadcastRoom(ws.roomCode);
+      }
       case "leave": {
         if (!ws.token) return error(ws, "NO_SESSION", "请先加入房间");
         const result = manager.leaveRoom(ws.token);
