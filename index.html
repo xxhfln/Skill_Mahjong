@@ -21,7 +21,7 @@
     <meta http-equiv="Expires" content="0" />
     <title>技能麻将</title>
     <!-- 微信内置浏览器常无法稳定加载 Google Fonts，优先系统中文字体 -->
-    <link rel="stylesheet" href="css/style.css?v=20260924d" />
+    <link rel="stylesheet" href="css/style.css?v=20260924e" />
   </head>
   <body>
     <div class="bg-layer" aria-hidden="true"></div>
@@ -144,21 +144,18 @@
           <div class="seats" id="seats"></div>
 
           <p class="pregame-hint" id="preGameHint" hidden>
-            等待房主「开始游戏」。下方为南方，玩家按东南西北就坐；点空位可换座位。
+            等待房主「开始游戏」。下方为南方，玩家按东南西北就坐；点空位可换座位。开始后将自动发牌。
           </p>
 
           <section class="room-section" id="handSection" hidden>
             <h3 class="section-title">你的手牌</h3>
-            <div id="drawArea">
-              <button type="button" class="btn btn-primary btn-block" id="drawBtnRoom">抽牌</button>
-            </div>
             <div class="hand" id="roomHand" aria-label="你的手牌"></div>
           </section>
 
           <section class="room-section" id="boardSection" hidden>
-            <h3 class="section-title">已使用技能</h3>
+            <h3 class="section-title">已打出技能</h3>
             <div class="board" id="board">
-              <p class="empty">还没有人使用技能</p>
+              <p class="empty">还没有人打出技能</p>
             </div>
           </section>
         </div>
@@ -241,9 +238,9 @@
     <script>
       window.__WS_URL__ = "__MJ_WS_URL__";
     </script>
-    <script src="js/config.js?v=20260924d"></script>
-    <script src="js/skills.js?v=20260924d"></script>
-    <script src="js/app.js?v=20260924d"></script>
-    <script src="js/rooms.js?v=20260924d"></script>
+    <script src="js/config.js?v=20260924e"></script>
+    <script src="js/skills.js?v=20260924e"></script>
+    <script src="js/app.js?v=20260924e"></script>
+    <script src="js/rooms.js?v=20260924e"></script>
   </body>
 </html>

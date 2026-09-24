@@ -59,22 +59,29 @@ test("allows four distinct players and rejects a fifth or duplicate name", () =>
   );
 });
 
-test("draws different cards for one player without preventing another player drawing the same skill", () => {
+test("开局自动发牌：同一玩家手牌不重复，不同玩家可抽到相同技能", () => {
   const manager = createManager();
   const { host, guest } = createTwoPlayerRoom(manager, 2);
-  manager.startGame(host.sessionToken);
+  const started = manager.startGame(host.sessionToken);
 
-  const hostFirst = manager.drawCard(host.sessionToken);
-  const hostSecond = manager.drawCard(host.sessionToken);
-  const guestFirst = manager.drawCard(guest.sessionToken);
+  // 自动发牌：每人立即拿到 drawCount 张
+  assert.equal(started.privateCards.length, 2, "房主开局应自动获得 2 张手牌");
+  const guestSnap = manager.snapshotFor(guest.sessionToken);
+  assert.equal(guestSnap.privateCards.length, 2, "其他玩家开局也应自动获得 2 张手牌");
 
-  assert.notEqual(hostFirst.privateCards[0].id, hostSecond.privateCards[1].id);
-  assert.deepEqual(guestFirst.privateCards.map((card) => card.id), [hostFirst.privateCards[0].id]);
-  assert.throws(() => manager.drawCard(host.sessionToken), (error) => error.code === "DRAW_LIMIT_REACHED");
+  const hostIds = started.privateCards.map((card) => card.id);
+  assert.equal(new Set(hostIds).size, 2, "同一玩家手牌互不重复");
+  assert.throws(
+    () => manager.drawCard(host.sessionToken),
+    (error) => error.code === "DRAW_LIMIT_REACHED",
+    "手牌已满后再抽应拒绝",
+  );
 });
 
 test("never includes an opponent's unplayed card name or rule in a player's snapshot", () => {
-  const sequence = [0, 0.2, 0.8];
+  // 注：随机源序列长度不可整除单人 shuffle 消耗次数，否则会产生周期混叠、
+  // 导致两位玩家发到完全相同的手牌，隐私断言将失去意义。
+  const sequence = [0.1, 0.5, 0.9, 0.3, 0.7];
   let pick = 0;
   const manager = new RoomManager({
     skills: availableSkills,
@@ -82,15 +89,18 @@ test("never includes an opponent's unplayed card name or rule in a player's snap
   });
   const { host, guest } = createTwoPlayerRoom(manager);
   manager.startGame(host.sessionToken);
-  const hostState = manager.drawCard(host.sessionToken);
-  const guestState = manager.drawCard(guest.sessionToken);
-  const hostCard = hostState.privateCards[0];
+  const hostState = manager.snapshotFor(host.sessionToken);
+  const guestState = manager.snapshotFor(guest.sessionToken);
+  const guestIds = guestState.privateCards.map((card) => card.id);
+  // 取一张「房主有、但客人没有」的牌 —— 客人的快照绝不能泄露它的内容
+  const hostOnlyCard = hostState.privateCards.find((card) => !guestIds.includes(card.id));
   const guestCard = guestState.privateCards[0];
   const guestSnapshotJson = JSON.stringify(guestState);
 
-  assert.notEqual(hostCard.id, guestCard.id);
-  assert.equal(guestSnapshotJson.includes(hostCard.name), false);
-  assert.equal(guestSnapshotJson.includes(hostCard.rule), false);
+  assert.ok(hostOnlyCard, "构造前提：房主应至少有一张客人没有的手牌");
+  assert.notEqual(hostState.privateCards[0].id, guestCard.id);
+  assert.equal(guestSnapshotJson.includes(hostOnlyCard.name), false, "不得泄露卡名");
+  assert.equal(guestSnapshotJson.includes(hostOnlyCard.rule), false, "不得泄露卡效果");
   assert.equal(guestState.privateCards[0].name, guestCard.name);
 });
 
@@ -98,7 +108,7 @@ test("use publishes only the used card name and rule to every player", () => {
   const manager = createManager();
   const { host, guest } = createTwoPlayerRoom(manager);
   manager.startGame(host.sessionToken);
-  const card = manager.drawCard(host.sessionToken).privateCards[0];
+  const card = manager.snapshotFor(host.sessionToken).privateCards[0];
 
   const published = manager.useCard(host.sessionToken, card.id);
   const guestSnapshot = manager.snapshotFor(guest.sessionToken);
@@ -108,8 +118,14 @@ test("use publishes only the used card name and rule to every player", () => {
   ]);
   assert.equal(published.publicCards.length, 1);
   assert.equal(published.privateCards[0].used, true);
+  // 打出一张不属于自己的牌应被拒（开局自动发牌后，二人可能持有相同技能，
+  // 所以从技能池中挑一张确定不在手里的来验证）
+  const pool = availableSkills.map((s) => s.id);
+  const guestSnap = manager.snapshotFor(guest.sessionToken);
+  const notOwnedId = pool.find((id) => !guestSnap.privateCards.some((c) => c.id === id));
+  assert.ok(notOwnedId, "构造前提：池中存在客人没有的技能");
   assert.throws(
-    () => manager.useCard(guest.sessionToken, card.id),
+    () => manager.useCard(guest.sessionToken, notOwnedId),
     (error) => error.code === "CARD_NOT_OWNED",
   );
 });
@@ -117,9 +133,7 @@ test("use publishes only the used card name and rule to every player", () => {
 test("only the host can reset, preserving room settings and players while clearing every card", () => {
   const manager = createManager();
   const { host, guest } = createTwoPlayerRoom(manager, 2);
-  manager.startGame(host.sessionToken);
-  manager.drawCard(host.sessionToken);
-  manager.drawCard(guest.sessionToken);
+  manager.startGame(host.sessionToken); // 开局自动发牌
   const before = manager.snapshotFor(host.sessionToken);
 
   assert.throws(
@@ -141,8 +155,7 @@ test("only the host can reset, preserving room settings and players while cleari
 test("restores a disconnected player's original seat using only their session token", () => {
   const manager = createManager();
   const { host, guest } = createTwoPlayerRoom(manager);
-  manager.startGame(host.sessionToken);
-  manager.drawCard(host.sessionToken);
+  manager.startGame(host.sessionToken); // 开局自动发牌 2 张
   const playerId = manager.snapshotFor(host.sessionToken).me.id;
 
   manager.disconnect(host.sessionToken);
@@ -152,7 +165,7 @@ test("restores a disconnected player's original seat using only their session to
 
   assert.equal(offlineSnap.players.find((player) => player.id === playerId).online, false);
   assert.equal(hostRestored.me.id, playerId);
-  assert.equal(hostRestored.privateCards.length, 1);
+  assert.equal(hostRestored.privateCards.length, 2);
   assert.equal(hostRestored.players.find((player) => player.id === playerId).online, true);
   assert.equal(restored.me.name, "玩家二");
 });
@@ -173,11 +186,12 @@ test("未开始游戏禁止抽牌；房主开始后开放，重置后回到未�
 
   const started = manager.startGame(host.sessionToken);
   assert.equal(started.started, true);
+  assert.equal(started.privateCards.length, 2, "开局自动发牌：房主立即获得 2 张");
   assert.throws(() => manager.startGame(host.sessionToken), (e) => e.code === "ALREADY_STARTED");
   assert.throws(() => manager.startGame(guest.sessionToken), (e) => e.code === "FORBIDDEN");
 
-  const drawn = manager.drawCard(host.sessionToken);
-  assert.equal(drawn.privateCards.length, 1);
+  // 手牌已满，再抽被拒
+  assert.throws(() => manager.drawCard(host.sessionToken), (e) => e.code === "DRAW_LIMIT_REACHED");
 
   const reset = manager.resetRoom(host.sessionToken);
   assert.equal(reset.started, false, "重置后回到未开始");

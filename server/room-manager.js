@@ -143,7 +143,7 @@ class RoomManager {
     return this.snapshotForPlayer(room, player);
   }
 
-  // 房主点击「开始游戏」：开启对局，之后方可抽卡
+  // 房主点击「开始游戏」：开启对局并自动为每位玩家发牌
   startGame(sessionToken) {
     const { room, player } = this.resolveSession(sessionToken);
     if (player.id !== room.hostPlayerId) throw new RoomError("FORBIDDEN", "只有房主可以开始游戏");
@@ -152,6 +152,13 @@ class RoomManager {
       throw new RoomError("NOT_ENOUGH_PLAYERS", `至少需要 ${MIN_PLAYERS} 名玩家才能开始`);
     }
     room.started = true;
+    // 开局自动发牌：每位玩家一次性抽到房主设定的数量（各自独立随机，
+    // 同一玩家手牌互不重复，不同玩家可以抽到相同技能）
+    for (const member of room.players.values()) {
+      const available = room.skillIds.filter((id) => !member.cards.has(id));
+      const picked = this.shuffle(available).slice(0, Math.min(room.drawCount, available.length));
+      picked.forEach((id) => member.cards.set(id, false));
+    }
     return this.snapshotForPlayer(room, player);
   }
 

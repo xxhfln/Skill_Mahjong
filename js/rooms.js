@@ -48,8 +48,6 @@
     handSection: $("handSection"),
     boardSection: $("boardSection"),
     preGameHint: $("preGameHint"),
-    drawArea: $("drawArea"),
-    drawBtnRoom: $("drawBtnRoom"),
     roomHand: $("roomHand"),
     board: $("board"),
     // 房间技能池
@@ -321,9 +319,9 @@
     el.roomRole.textContent = snapshot.me.isHost ? "房主" : "玩家";
     el.hostPanel.hidden = !snapshot.me.isHost;
 
-    // 未开始阶段：隐藏「你的手牌」「已使用技能」与「重置本局」；仅显示座位与开始按钮
-    el.handSection.hidden = started;
-    el.boardSection.hidden = started;
+    // 未开始阶段：隐藏「你的手牌」「已打出技能」与「重置本局」；仅显示座位与开始按钮
+    el.handSection.hidden = !started;
+    el.boardSection.hidden = !started;
     el.preGameHint.hidden = started;
 
     // 房主「开始游戏」按钮：仅未开始时显示；人数不足时禁用并提示
@@ -380,7 +378,7 @@
         seat.innerHTML =
           `<span class="seat__dir">${DIR_LABEL[player.direction]}</span>` +
           `<span class="seat__name">${escapeHtml(player.name)}${player.isHost ? ' <em class="seat__host">房主</em>' : ""}${player.id === myId ? ' <em class="seat__you">你</em>' : ""}</span>` +
-          `<span class="seat__info">抽 ${player.drawnCount} · 已用 ${used}</span>`;
+          `<span class="seat__info">手牌 ${player.drawnCount} · 已打出 ${used}</span>`;
       }
       frag.appendChild(seat);
     }
@@ -389,22 +387,15 @@
 
   function renderHand() {
     const cards = snapshot.privateCards || [];
-    // 游戏尚未开始：禁止抽牌，展示等待提示
+    // 游戏尚未开始：本区块整体隐藏，这里仅做安全兜底
     if (!snapshot.started) {
-      el.drawArea.hidden = false;
-      el.drawBtnRoom.disabled = true;
-      el.drawBtnRoom.textContent = snapshot.me.isHost ? "等待开始游戏…" : "等待房主开始游戏…";
-      el.roomHand.innerHTML = '<p class="empty">游戏尚未开始，等待房主点击「开始游戏」</p>';
-      return;
-    }
-    if (cards.length === 0) {
-      el.drawArea.hidden = false;
-      el.drawBtnRoom.disabled = false;
-      el.drawBtnRoom.textContent = `抽牌（${snapshot.drawCount} 张）`;
       el.roomHand.innerHTML = "";
       return;
     }
-    el.drawArea.hidden = true;
+    if (cards.length === 0) {
+      el.roomHand.innerHTML = '<p class="empty">暂无手牌</p>';
+      return;
+    }
     el.roomHand.innerHTML = "";
     const frag = document.createDocumentFragment();
     cards.forEach((skill, i) => {
@@ -426,11 +417,11 @@
       play.type = "button";
       play.className = "mcard__play";
       if (skill.used) {
-        play.textContent = "已使用";
+        play.textContent = "已打出";
         play.disabled = true;
         card.classList.add("is-used");
       } else {
-        play.textContent = "使用";
+        play.textContent = "打出";
         play.dataset.id = skill.id;
         play.addEventListener("click", () => {
           if (send({ type: "use", token, cardId: skill.id })) play.disabled = true;
@@ -448,7 +439,7 @@
   function renderBoard() {
     const cards = snapshot.publicCards || [];
     if (cards.length === 0) {
-      el.board.innerHTML = '<p class="empty">还没有人使用技能</p>';
+      el.board.innerHTML = '<p class="empty">还没有人打出技能</p>';
       return;
     }
     el.board.innerHTML = "";
@@ -458,7 +449,7 @@
       e.className = "effect";
       e.innerHTML =
         `<div class="effect__head">` +
-        `<span class="effect__tag">${escapeHtml(skill.ownerName || "某人")} 使用了</span>` +
+        `<span class="effect__tag">${escapeHtml(skill.ownerName || "某人")} 打出了</span>` +
         `<span class="effect__name">${escapeHtml(skill.name)}</span>` +
         `<span class="effect__code">${escapeHtml(skill.code)} · ${escapeHtml(skill.group)}</span>` +
         `</div>` +
@@ -650,7 +641,6 @@
       closeRoomPool();
     });
 
-    el.drawBtnRoom.addEventListener("click", () => send({ type: "draw", token }));
     el.startBtnRoom.addEventListener("click", () => {
       if (!snapshot || snapshot.started) return;
       if (snapshot.players.length < MIN_PLAYERS) {

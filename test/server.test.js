@@ -117,22 +117,19 @@ test("建房/加入并各自抽到互不重复卡；保密性成立", async () =
     (m) => m.snapshot.players.length === 2,
   );
 
-  // 房主开始游戏后，玩家方可抽牌
-  await a.act({ type: "start", token: created.token }, (m) => m.snapshot.started === true);
-
-  const aDrawn = await a.act(
-    { type: "draw", token: created.token },
-    (m) => m.snapshot.privateCards.length === 2,
+  // 房主开始游戏：全员自动发牌
+  const started = await a.act(
+    { type: "start", token: created.token },
+    (m) => m.snapshot.started === true && m.snapshot.privateCards.length === 2,
   );
-  const aCards = aDrawn.snapshot.privateCards;
+  const aCards = started.snapshot.privateCards;
   assert.equal(aCards.length, 2);
   assert.notEqual(aCards[0].id, aCards[1].id, "同一玩家手牌互不重复");
 
   // 玩家二收到的快照不得包含房主未公开卡牌的内容
-  const bSnap = b.last("state");
-  assert.ok(bSnap, "玩家二应收到广播快照");
+  const bSnap = await b.awaitState((m) => m.snapshot.privateCards.length === 2);
+  assert.ok(bSnap, "玩家二应收到广播快照并同样自动发牌");
   const bJson = JSON.stringify(bSnap.snapshot);
-  assert.equal(bSnap.snapshot.privateCards.length, 0, "玩家二尚未抽牌，无私牌");
   assert.ok(!bJson.includes(aCards[0].name), "对手快照不应含房主未公开卡名");
   assert.ok(!bJson.includes(aCards[0].rule), "对手快照不应含房主未公开卡效果");
 
@@ -158,11 +155,11 @@ test("使用卡牌后全员可见；不同玩家可抽到相同技能", async ()
 
   await a.act({ type: "start", token: created.token }, (m) => m.snapshot.started === true);
 
-  const aDrawn = await a.act(
-    { type: "draw", token: created.token },
-    (m) => m.snapshot.privateCards.length === 1,
+  // 开局已自动发牌，直接取房主手牌
+  const startedSnap = await a.waitFor(
+    (m) => m.type === "state" && m.snapshot.privateCards.length === 1,
   );
-  const card = aDrawn.snapshot.privateCards[0];
+  const card = startedSnap.snapshot.privateCards[0];
 
   a.send({ type: "use", token: created.token, cardId: card.id });
   const bSees = await b.awaitState((m) => m.snapshot.publicCards.some((c) => c.id === card.id));
@@ -191,7 +188,7 @@ test("仅房主可重置；重置清空手牌并保留配置与成员，局数�
     (m) => m.snapshot.players.length === 2,
   );
 
-  // 房主开始游戏，否则抽牌会被拒
+  // 房主开始游戏（开局自动发牌），否则重置场景不完整
   await a.act({ type: "start", token: created.token }, (m) => m.snapshot.started === true);
 
   // 非房主重置应被拒
@@ -199,10 +196,6 @@ test("仅房主可重置；重置清空手牌并保留配置与成员，局数�
   const denied = await b.waitFor((m) => m.type === "error" && m.code === "FORBIDDEN");
   assert.equal(denied.code, "FORBIDDEN");
 
-  await a.act(
-    { type: "draw", token: created.token },
-    (m) => m.snapshot.privateCards.length === 2,
-  );
   const reset = await a.act(
     { type: "reset", token: created.token },
     (m) => m.snapshot.round === 2,
@@ -233,11 +226,6 @@ test("持令牌重连可恢复原座位", async () => {
   await b.open;
   await b.act({ type: "join", roomCode, name: "玩家二" }, (m) => m.snapshot.players.length === 2);
   await a.act({ type: "start", token }, (m) => m.snapshot.started === true);
-
-  await a.act(
-    { type: "draw", token },
-    (m) => m.snapshot.privateCards.length === 2,
-  );
   const idBefore = created.snapshot.me.id;
 
   a.close();
@@ -318,19 +306,18 @@ test("未开始游戏时抽牌被拒；房主开始后开放", async () => {
   const denied = await a.waitFor((m) => m.type === "error" && m.code === "NOT_STARTED");
   assert.equal(denied.code, "NOT_STARTED");
 
-  // 房主开始游戏
+  // 房主开始游戏：全员自动发牌
   const started = await a.act(
     { type: "start", token: created.token },
     (m) => m.snapshot.started === true,
   );
   assert.equal(started.snapshot.started, true);
+  assert.equal(started.snapshot.privateCards.length, 2, "开局应自动发牌 2 张");
 
-  // 现在可以抽牌
-  const drawn = await a.act(
-    { type: "draw", token: created.token },
-    (m) => m.snapshot.privateCards.length === 2,
-  );
-  assert.equal(drawn.snapshot.privateCards.length, 2);
+  // 手牌已满后再抽被拒
+  a.send({ type: "draw", token: created.token });
+  const capped = await a.waitFor((m) => m.type === "error" && m.code === "DRAW_LIMIT_REACHED");
+  assert.equal(capped.code, "DRAW_LIMIT_REACHED");
 
   a.close();
   b.close();
