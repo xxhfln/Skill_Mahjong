@@ -1,10 +1,3 @@
-# TODO
-
-1. 优化出牌显示的顺序，最新出的牌应该显示在之前出过的牌的上面
-2. 添加侧边移动按钮，按下后可弹出面板，再次按下可收回面板；面板上写有作者名字、项目地址以及bug反馈渠道
-
-
-
 原项目地址：[https://github.com/LaurenceTse/skill-mahjong](https://github.com/LaurenceTse/skill-mahjong)
 
 说明：本项目复刻/修改自上述开源项目，并在此基础上进行二次开发。
@@ -34,13 +27,13 @@
 
 ## 1. 单机模式（最快上手）
 
-不需要任何后端，直接用静态服务器打开即可：
+不需要任何后端，直接用静态服务器打开即可，在该项目根目录执行以下代码：
 
 ```bash
 python3 -m http.server 5173
 ```
 
-浏览器打开 `http://localhost:5173`，切到「单机」标签使用。
+浏览器输入 `localhost:5173`，切到「单机」标签使用。
 （微信内置浏览器、手机浏览器同样可用；微信缓存重请见文末「微信打不开最新版」一节。）
 
 ---
@@ -88,7 +81,7 @@ npm start        # 启动服务，默认监听 http://localhost:3000 与 ws://lo
 
 ## 4. 房间模式 · 公网（异地联网）
 
-> **完整操作步骤见 [`DEPLOY.md`](./DEPLOY.md)**（含 Render / Netlify / Cloudflare Tunnel 三条路线的按钮级步骤与排障表）。
+> **完整操作步骤见 [`DEPLOY.md`](./DEPLOY.md)**（含 Render 一键部署 / Docker / Netlify+Render / Cloudflare Tunnel 四条路线的按钮级步骤、排障表与 FAQ）。
 
 同一套房间服务既能在局域网跑，也能部署到任意支持 WebSocket 的云端。三种路线：
 

@@ -25,6 +25,8 @@
   --safe-bottom: constant(safe-area-inset-bottom);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --app-height: 100vh;
+  /* 侧边信息面板宽度；按钮收回/弹出时按同一变量位移，两者始终贴合 */
+  --side-panel-w: 280px;
 }
 
 *,
@@ -1764,5 +1766,138 @@ button {
 
 .room-section[hidden] {
   display: none !important;
+}
+
+/* ---------------- 侧边信息面板 ---------------- */
+
+@media (max-width: 360px) {
+  :root {
+    --side-panel-w: 78vw;
+  }
+}
+
+.side-toggle {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  /* 16/15：高于页面内容(最高 3)，但低于技能池弹窗 .sheet(20)、
+     吐司(50) 与二次确认弹窗(60)，避免弹窗打开时按钮仍浮在最上层 */
+  z-index: 16;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  width: 34px;
+  height: 76px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-right: none;
+  border-radius: 14px 0 0 14px;
+  background: var(--panel-strong);
+  color: var(--gold-soft);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-transform: translate(0, -50%);
+  transform: translate(0, -50%);
+  -webkit-transition: -webkit-transform 260ms ease, background 160ms ease;
+  transition: transform 260ms ease, background 160ms ease;
+}
+
+/* 面板弹出时，按钮随面板左移，始终贴在面板左边缘 */
+.side-toggle.is-open {
+  -webkit-transform: translate(calc(-1 * var(--side-panel-w)), -50%);
+  transform: translate(calc(-1 * var(--side-panel-w)), -50%);
+}
+
+.side-toggle__icon {
+  display: block;
+  -webkit-transition: -webkit-transform 260ms ease;
+  transition: transform 260ms ease;
+}
+
+.side-toggle.is-open .side-toggle__icon {
+  -webkit-transform: rotate(180deg);
+  transform: rotate(180deg);
+}
+
+.side-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 15;
+  width: var(--side-panel-w);
+  padding: 18px 18px calc(18px + var(--safe-bottom));
+  background: var(--panel-strong);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  visibility: hidden;
+  -webkit-transform: translateX(100%);
+  transform: translateX(100%);
+  -webkit-transition: -webkit-transform 260ms ease, visibility 260ms ease;
+  transition: transform 260ms ease, visibility 260ms ease;
+}
+
+.side-panel.is-open {
+  visibility: visible;
+  -webkit-transform: translateX(0);
+  transform: translateX(0);
+}
+
+.side-panel__head {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.side-panel__title {
+  margin: 0;
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: 1.05rem;
+  color: var(--gold-soft);
+}
+
+.side-panel__row {
+  margin: 0 0 14px;
+}
+
+.side-panel__label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  color: var(--ivory-dim);
+}
+
+.side-panel__value {
+  font-size: 0.95rem;
+  color: var(--ivory);
+  word-break: break-all;
+}
+
+.side-panel__link {
+  font-size: 0.88rem;
+  color: var(--gold-soft);
+  word-break: break-all;
+  -webkit-text-decoration: none;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.side-panel__note {
+  margin-top: 18px;
+  font-size: 0.74rem;
+  line-height: 1.7;
+  color: var(--ivory-dim);
 }
 

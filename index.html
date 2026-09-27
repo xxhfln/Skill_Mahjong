@@ -21,7 +21,7 @@
     <meta http-equiv="Expires" content="0" />
     <title>技能麻将</title>
     <!-- 微信内置浏览器常无法稳定加载 Google Fonts，优先系统中文字体 -->
-    <link rel="stylesheet" href="css/style.css?v=20260924e" />
+    <link rel="stylesheet" href="css/style.css?v=20260928a" />
   </head>
   <body>
     <div class="bg-layer" aria-hidden="true"></div>
@@ -31,7 +31,7 @@
     <main class="app">
       <header class="hero">
         <p class="brand">技能麻将</p>
-        <p class="tagline">好好玩 要爆了</p>
+        <!-- <p class="tagline">好好玩 要爆了</p> -->
       </header>
 
       <nav class="mode-nav" aria-label="模式切换">
@@ -162,6 +162,39 @@
       </section>
     </main>
 
+    <!-- 侧边信息面板：按下侧边按钮弹出，再按一次收回 -->
+    <button
+      type="button"
+      class="side-toggle"
+      id="sideToggle"
+      aria-controls="sidePanel"
+      aria-expanded="false"
+      aria-label="关于本作品"
+    >
+      <span class="side-toggle__icon" aria-hidden="true">‹</span>
+    </button>
+    <aside class="side-panel" id="sidePanel" aria-label="关于本作品" aria-hidden="true">
+      <div class="side-panel__head">
+        <h2 class="side-panel__title">关于本作品</h2>
+        <button type="button" class="icon-btn" id="sidePanelClose" aria-label="收起面板">✕</button>
+      </div>
+      <p class="side-panel__row">
+        <span class="side-panel__label">作者</span>
+        <span class="side-panel__value">xxhfln</span>
+      </p>
+      <p class="side-panel__row">
+        <span class="side-panel__label">项目主页</span>
+        <a
+          class="side-panel__link"
+          href="https://github.com/xxhfln/Skill_Mahjong"
+          target="_blank"
+          rel="noopener noreferrer"
+          >github.com/xxhfln/Skill_Mahjong</a
+        >
+      </p>
+      <p class="side-panel__note">仅供娱乐 · 无赌博功能 · 无真实金钱交易</p>
+    </aside>
+
     <!-- 单机技能池弹窗 -->
     <div
       class="sheet"
@@ -238,9 +271,10 @@
     <script>
       window.__WS_URL__ = "__MJ_WS_URL__";
     </script>
-    <script src="js/config.js?v=20260924e"></script>
-    <script src="js/skills.js?v=20260924e"></script>
-    <script src="js/app.js?v=20260924e"></script>
-    <script src="js/rooms.js?v=20260924e"></script>
+    <script src="js/config.js?v=20260928a"></script>
+    <script src="js/skills.js?v=20260928a"></script>
+    <script src="js/app.js?v=20260928a"></script>
+    <script src="js/rooms.js?v=20260928a"></script>
+    <script src="js/sidebar.js?v=20260928a"></script>
   </body>
 </html>

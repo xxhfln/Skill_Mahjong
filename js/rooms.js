@@ -437,7 +437,9 @@
   }
 
   function renderBoard() {
-    const cards = snapshot.publicCards || [];
+    // 服务端按打出顺序追加（最旧的在前），展示时倒序 → 最新打出的排在最上面。
+    // 用倒序而非按 usedAt 排序：同一毫秒内连打两张时时间戳并列，排序会退化。
+    const cards = (snapshot.publicCards || []).slice().reverse();
     if (cards.length === 0) {
       el.board.innerHTML = '<p class="empty">还没有人打出技能</p>';
       return;
